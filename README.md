@@ -1,9 +1,21 @@
 # How to run the code:
-- Run the code with the following command to have a square bounding box:
+- First, clone the repository:
+    ```
+    git clone https://github.com/NickFarinacci/MOT_CV_Final_Project
+    ```
+- After cloning the repository, run the following command to install the dependencies:
+    ```
+    pip install -r requirements.txt
+    ```
+- After installing the dependencies, move to the code directory:
+    ```
+    cd code
+    ```
+- Finally, run the code with the following command to have a square bounding box:
     ```
     python3 final_code.py --input_file <filename> --box_type square --output_file <output_filename> --conf_thresh <0.0-1.0> --iou_thresh <0.0-1.0>
     ```
-    - Example:
+    - Examples:
     ```
     python3 final_code.py --input_file input_files/traffic.mp4 --box_type square --output_file traffic_square --conf_thresh 0.3 --iou_thresh 0.3
     ```
@@ -15,7 +27,7 @@
     ```
     python3 final_code.py --input_file <filename> --box_type overlay --output_file <output_filename> --conf_thresh <0.0-1.0> --iou_thresh <0.0-1.0>
     ```
-    - Example:
+    - Examples:
     ```
     python3 final_code.py --input_file input_files/traffic.mp4 --box_type overlay --output_file traffic_overlay --conf_thresh 0.3 --iou_thresh 0.3
     ```
@@ -27,6 +39,7 @@
 - Go to the Colab implementation at https://colab.research.google.com/drive/1UgU_yBro7pnM11UKRJfyCd6eiIgn4_sw?usp=sharing
 - Run through the script with any input.mp4 file.
 - Similar logic just without cv2 functionality.
+- Make sure file paths are correct inside the Google Colab Notebook (if changing input and output file paths).
 
 # Command line arguments:
 - input_file: Path to input video file (default: input_files/traffic.mp4)
@@ -36,7 +49,7 @@
 - iou_thresh: IOU threshold for tracking (0-1) (default: 0.3)
 
 # Things to do / Challenges:
-- Improve the color detection as it seems a little bit off.
+- Improve the color detection as it seems a little bit off, currently uses averages detected in the object bounding box.
 - Improve the speed and size calulcation, we can try to get actual metrics rather than just a range of acceptable values. We can show like mile per hour or width and height in feet, however this will require more extensive computation.
 - Try to figure out how to train without using or downloading the full dataset, as this was an issue we ran into.
 - Ability to upload and share specific models and datasets through GitHub:
