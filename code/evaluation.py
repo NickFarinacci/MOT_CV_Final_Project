@@ -1,3 +1,70 @@
+"""
+    This file contains the evaluation code for the tracking performance.
+    It uses the FiftyOne library to evaluate the tracking performance and save evlauted results.
+    It also calculates the custom metrics for the tracking performance.
+
+    This code is used by both the local (final_code.py) and Colab (final_code_colab.py) versions:
+        - Local Version: Evaluates tracking results after real-time display and tracking
+        - Colab Version: Evaluates tracking results after file-based processing without display
+
+    Input Parameters:
+        tracking_results: List of dictionaries containing tracking data
+            Required keys: 'frame', 'id', 'bbox', 'confidence', 'class_id'
+            Example: {
+                'frame': 1,
+                'id': 5,
+                'bbox': [x1, y1, x2, y2],
+                'confidence': 0.92,
+                'class_id': 2
+            }
+        
+        ground_truth: List of dictionaries containing ground truth data
+            Required keys: 'frame', 'id', 'bbox', 'class_id'
+            Example: {
+                'frame': 1,
+                'id': 1,
+                'bbox': [x1, y1, x2, y2],
+                'class_id': 2
+            }
+        
+        frame_count: Integer, total number of frames processed
+        
+        video_name: String, name of the input video (used for output directory structure)
+        
+        model_classes: Dictionary mapping class IDs to class names
+            Example: {0: 'person', 1: 'car', 2: 'truck'}
+        
+        output_dir: Optional string, custom output directory path
+            Default: 'output_files/<video_name>/evaluation_results'
+
+    The produced graphs are saved to the output_files/<input filename>/evaluation_results folder.
+    These graphs are:
+    - ID Switches: Tracks how many times object IDs change incorrectly during tracking. Lower values indicate 
+        better tracking consistency. Shows cumulative switches over time.
+        
+        - IDF1 Curve: The ID F1 Score, which measures how well the tracker maintains consistent IDs. Combines ID 
+        precision and recall into a single score. Values range from 0 to 1, with 1 being perfect tracking.
+        
+        - IOU Curve: Shows the Intersection over Union scores across frames, measuring how well the predicted 
+        bounding boxes align with ground truth. Higher values (closer to 1) indicate better spatial accuracy.
+        
+        - MOTA Curve: Multiple Object Tracking Accuracy, a comprehensive metric that considers false positives, 
+        false negatives, and ID switches. Ranges from -∞ to 1, with 1 being perfect tracking.
+        
+        - Precision Recall Curve: Shows the trade-off between precision (accuracy of positive predictions) and 
+        recall (ability to find all positive instances). Helps in understanding detector performance at 
+        different confidence thresholds.
+        
+        - ROC Curve: Receiver Operating Characteristic curve plots true positive rate against false positive rate. 
+        Shows detector performance across different thresholds, with area under curve (AUC) indicating overall 
+        performance.
+        
+        - Traffic Count: Displays the cumulative count of unique objects detected over time. Useful for 
+        understanding traffic flow and detector consistency.
+
+    Returns:
+        results: FiftyOne evaluation and other evaluation metrics results.
+"""
 import fiftyone as fo
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,13 +77,14 @@ import cv2
 from fiftyone.core.metadata import ImageMetadata
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
 
-# Monkey patch np.asfarray before importing motmetrics
+# Monkey patch np.asfarray before importing motmetrics because of a bug we encountered
 original_asfarray = getattr(np, 'asfarray', None)
 np.asfarray = lambda x: np.asarray(x, dtype=float)
 
 import motmetrics as mm
 from motmetrics import metrics
 
+# This function evaluates the tracking performance and saves the results to a dataset, calculates custom metrics, and saves the graphs.
 def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, video_name, model_classes, output_dir=None):
     """
     Comprehensive evaluation combining custom metrics and FiftyOne evaluation
@@ -27,8 +95,10 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
     else:
         eval_output_dir = output_dir
         
+    # Create the evaluation results directory if it doesn't exist
     os.makedirs(eval_output_dir, exist_ok=True)
 
+    # This function saves the plots to the evaluation results directory
     def save_plot(fig, name):
         """Helper to save plots"""
         plot_path = os.path.join(eval_output_dir, f"{name}.png")
@@ -54,8 +124,10 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
             if frame is None:
                 continue
                 
+            # Get frame dimensions
             height, width = frame.shape[:2]
             
+            # Create sample with metadata
             sample = fo.Sample(filepath=os.path.abspath(frame_path))
             sample.metadata = ImageMetadata(
                 size_bytes=os.path.getsize(frame_path),
@@ -78,6 +150,7 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
                 ) for p in frame_preds
             ])
 
+            # Add ground truth
             sample["ground_truth"] = fo.Detections(detections=[
                 fo.Detection(
                     label=model_classes[g["class_id"]],
@@ -85,6 +158,7 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
                 ) for g in frame_gt
             ])
 
+            # Add sample to dataset
             dataset.add_sample(sample)
         except Exception as e:
             logging.error(f"Error processing frame {frame_num}: {str(e)}")
@@ -139,13 +213,13 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
                         break
                 if not matched:
                     y_true.append(1)
-                    y_score.append(0.0)  # Lowest possible score for missed detection
+                    y_score.append(0.0)
             
             # Add true negatives (correct non-detections)
             # Get all other class predictions for this frame
             other_preds = [p for p in tracking_results if p["frame"] == frame and p["class_id"] != class_id]
             for other_pred in other_preds:
-                y_true.append(0)  # It's correct that this isn't our class
+                y_true.append(0)
                 y_score.append(other_pred.get("confidence", 1.0))
 
         if len(y_true) > 0:
@@ -161,7 +235,7 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
     plt.grid(True)
     save_plot(roc_fig, "roc_curves")
 
-    # 2. Precision-Recall Curves (only for detected classes)
+    # 2. Precision-Recall Curves (only for detected classes) (this can be improved and more efficient with the above however we left our implementation as is).
     pr_fig = plt.figure(figsize=(12, 8))
     for class_name in detected_classes:
         # Get class ID
@@ -188,9 +262,9 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
                         if calculate_box_iou(pred["bbox"], gt["bbox"]) > 0.5:
                             matched = True
                             break
-                    y_true.append(1 if matched else 0)  # False positive if no match
+                    y_true.append(1 if matched else 0) # False positive if no match
                 else:
-                    y_true.append(0)  # Prediction of wrong class = negative example
+                    y_true.append(0) # Prediction of wrong class = negative example
                 y_score.append(pred.get("confidence", 1.0))
             
             # Add false negatives (missed ground truths)
@@ -201,9 +275,10 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
                         matched = True
                         break
                 if not matched:
-                    y_true.append(1)  # Missed ground truth = false negative
-                    y_score.append(0.0)  # Lowest possible score
+                    y_true.append(1) # Missed ground truth = false negative
+                    y_score.append(0.0) # Lowest possible score
         
+        # If there are any true positives, calculate the PR curve and AP
         if len(y_true) > 0:
             # Convert to numpy arrays for sklearn
             y_true = np.array(y_true)
@@ -216,13 +291,14 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
             # Plot the curve
             plt.plot(recall, precision, label=f'{class_name} (AP={ap:.3f})')
             
-            # Log some statistics to help debug
+            # Log statistics to help debug
             logging.info(f"\nClass {class_name} statistics:")
             logging.info(f"Total examples: {len(y_true)}")
             logging.info(f"Positive examples: {np.sum(y_true == 1)}")
             logging.info(f"Negative examples: {np.sum(y_true == 0)}")
             logging.info(f"Average precision: {ap:.3f}")
     
+    # Add title and labels
     plt.title('Precision-Recall Curves by Class')
     plt.xlabel('Recall')
     plt.ylabel('Precision')
@@ -243,21 +319,31 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
 
     # 4. MOTA and 5. IDF1 over time
     try:
+        # Initialize MOT accumulator
         acc = mm.MOTAccumulator(auto_id=True)
+        
+        # Initialize lists to store scores
         mota_scores = []
         idf1_scores = []
+        
+        # Get frame numbers
         frame_numbers = range(1, frame_count + 1)
 
+        # Iterate through each frame
         for frame_num in frame_numbers:
+            # Get ground truth and predictions for this frame
             frame_gt = [g for g in ground_truth if g["frame"] == frame_num]
             frame_pred = [p for p in tracking_results if p["frame"] == frame_num]
             
+            # Get IDs and boxes for ground truth and predictions
             gt_ids = [g["id"] for g in frame_gt]
             gt_boxes = [g["bbox"] for g in frame_gt]
             
+            # Get IDs and boxes for predictions
             pred_ids = [p["id"] for p in frame_pred]
             pred_boxes = [p["bbox"] for p in frame_pred]
 
+            # If there are any ground truth and predictions, update the accumulator
             if len(gt_boxes) > 0 and len(pred_boxes) > 0:
                 distances = mm.distances.iou_matrix(gt_boxes, pred_boxes, max_iou=0.5)
                 acc.update(gt_ids, pred_ids, distances)
@@ -265,9 +351,11 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
             # Calculate metrics for this frame
             frame_summary = calculate_mot_metrics(acc)
             try:
+                # Append the metrics for this frame
                 mota_scores.append(float(frame_summary['mota'].iloc[0]))
                 idf1_scores.append(float(frame_summary['idf1'].iloc[0]))
             except:
+                # If there are no metrics, append 0.0
                 mota_scores.append(0.0)
                 idf1_scores.append(0.0)
 
@@ -317,6 +405,7 @@ def evaluate_tracking_performance(tracking_results, ground_truth, frame_count, v
     fo.delete_dataset(dataset_name)
     return results
 
+# This function normalizes the bbox coordinates to the image dimensions
 def normalize_bbox(bbox, sample):
     """Convert absolute bbox coordinates to relative coordinates"""
     try:
@@ -325,8 +414,10 @@ def normalize_bbox(bbox, sample):
         if frame is None:
             raise ValueError(f"Could not read image: {sample.filepath}")
             
+        # Get frame dimensions
         height, width = frame.shape[:2]
         
+        # Normalize the bbox coordinates
         x1, y1, x2, y2 = bbox
         return [
             x1 / width,
@@ -339,10 +430,12 @@ def normalize_bbox(bbox, sample):
         # Return original coordinates if normalization fails
         return [x1, y1, x2 - x1, y2 - y1]
 
+# This function calculates the IoU curve
 def calculate_iou_curve(tracking_results, ground_truth, thresholds):
     """Calculate detection rate at different IoU thresholds"""
     detection_rates = []
     
+    # Iterate through each threshold
     for threshold in thresholds:
         total_detections = 0
         correct_detections = 0
@@ -359,13 +452,17 @@ def calculate_iou_curve(tracking_results, ground_truth, thresholds):
                     if calculate_box_iou(pred["bbox"], gt["bbox"]) > threshold:
                         correct_detections += 1
         
+        # Calculate the detection rate
         detection_rate = correct_detections / total_detections if total_detections > 0 else 0
         detection_rates.append(detection_rate)
     
-    return detection_rates
+    return detection_rates # Return the detection rates
 
+# This function calculates the ID switches
 def calculate_id_switches(tracking_results, frame_count):
     """Calculate cumulative ID switches over time"""
+
+    # Initialize the list to store the cumulative switches
     switches = []
     cumulative_switches = 0
     
@@ -387,10 +484,12 @@ def calculate_id_switches(tracking_results, frame_count):
         appeared = set(curr_frame_tracks.keys()) - set(prev_frame_tracks.keys())
         cumulative_switches += len(disappeared) + len(appeared)
         
+        # Append the cumulative switches
         switches.append(cumulative_switches)
     
-    return switches
+    return switches # Return the cumulative switches
 
+# This function calculates the IoU between two boxes (similar to the one in final_code files)
 def calculate_box_iou(box1, box2):
     """Calculate IoU between two boxes"""
     # Extract coordinates
@@ -413,10 +512,12 @@ def calculate_box_iou(box1, box2):
     iou = intersection / union if union > 0 else 0
     return iou 
 
+# This function calculates the MOT metrics
 def calculate_mot_metrics(acc):
     """Calculate MOT metrics using motmetrics"""
-    mh = mm.metrics.create()
+    mh = mm.metrics.create() # Create the metrics object
     
+    # List of metrics to calculate (this means we can use these metrics for other purposes)
     metrics_list = [
         'mota', 'motp', 'idf1',
         'num_switches', 'num_fragmentations',

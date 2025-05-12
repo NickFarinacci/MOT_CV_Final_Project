@@ -1,3 +1,11 @@
+"""
+    This is an unused train.py file that we tried to use to train the model. At first, as the code attempted, we tried to
+    download COCO (from the COCO.yaml database) however due to the size of the dataset, we were unable to download it. We tried
+    to optimize the code and figure out how to train the model without the full dataset, but we were unable to do so in the time
+    we had and rather focused on the testing evaluation code. This code is provided and left here for reference to see our
+    attempt at training the model ourselves. Even if this were to work, we would have to then make a Google Colab notebook
+    to train the model at a decent speed.
+"""
 import os
 import argparse
 import logging

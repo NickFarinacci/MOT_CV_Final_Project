@@ -7,3 +7,7 @@ code/models/
 code/__pycache__/
 *.pyc
 **/__pycache__/
+
+# .DS_Store everywhere
+.DS_Store
+**/.DS_Store

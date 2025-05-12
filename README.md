@@ -35,23 +35,23 @@
 - conf_thresh: Confidence threshold for YOLO detections (0-1) (default: 0.3)
 - iou_thresh: IOU threshold for tracking (0-1) (default: 0.3)
 
-# Things to do:
-- Provide more videos to test the code. Try to find longer videos with different types of objects and environments to track.
-- Possible improve the color detection as it seems a little bit off.
-- Try to figure out if we can run the code using Google Colab or something to speed up the process and make it real time, however this might not be possible due to the use of cv2 modules.
-- Commenting/fixing the code structure and implementation. We will both make it look less ChatGPT like.
+# Things to do / Challenges:
+- Improve the color detection as it seems a little bit off.
+- Improve the speed and size calulcation, we can try to get actual metrics rather than just a range of acceptable values. We can show like mile per hour or width and height in feet, however this will require more extensive computation.
+- Try to figure out how to train without using or downloading the full dataset, as this was an issue we ran into.
+- Ability to upload and share specific models and datasets through GitHub:
+    - We have found that when file sizes are excessive, we can use
+    ```
+    git config http.postBuffer <buffer_size>
+    ```
+    to increase the buffer size, which was useful for uploading larger files when we saw the need to do so.
+    Example:
+    ```
+    git config http.postBuffer 524288000
+    ```
+    This example will increase the buffer size to 500MB, which was useful for uploading the YOLO11x.pt model, datasets, and other input/output files.
 
-# Extra Notes/Things we can do:
-- We should not focus on training the model, and more on utilizing the pretrained YOLO models.
-    - YOLO11 is being used for square bounding boxes.
-    - YOLO11-seg is being used for the overlay bounding boxes.
-- We should not need the COCO dataset, as it is not needed since ultralytics has the pretrained models.
-
-# Usefule Links:
-- https://docs.ultralytics.com/models/yolo11/
-- https://cocodataset.org/#download
-
-## Evaluation
+# Evaluation
 The system automatically performs comprehensive evaluation after processing each video, including:
 - ROC curves per object class
     - ROC curves are a plot of the true positive rate (TPR) against the false positive rate (FPR) at various threshold settings.
@@ -109,3 +109,4 @@ Results are saved in output_files/<video_name>/evaluation_results/
   - A specific dataset different from COCO
   - Need to detect custom object classes
   - Have sufficient computing resources
+- Note: This did not work for us during our implementation phase due to time and storage contraints.

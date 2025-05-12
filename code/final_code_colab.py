@@ -1,3 +1,74 @@
+"""
+    final_code_colab.py is the Colab-compatible version of final_code.py that evaluates model performance after running MOT
+    on an input video. This version is modified to run in Google Colab by removing interactive display elements and using
+    file-based output instead of real-time visualization. The colab notebook is provided in the root directory under the name
+    colab_notebook.ipynb.
+
+    The code uses SORT (Simple Online and Realtime Tracking) for object tracking, which is a simple yet effective
+    algorithm that uses Kalman filtering and Hungarian matching for real-time object tracking. This algorithm is
+    taken from the following GitHub repo: https://github.com/abewley/sort
+
+    Parameters:
+        --input_file: Path to input video file (default: input_files/traffic.mp4)
+        --box_type: Type of bounding box visualization ['square', 'overlay'] (default: square)
+        --output_file: Custom output filename without extension (default: 'result')
+        --conf_thresh: Confidence threshold for YOLO detections (0-1) (default: 0.3)
+        --iou_thresh: IOU threshold for tracking (0-1) (default: 0.3)
+
+    Key Differences from Local Version:
+        - Removes cv2.imshow() and window creation for Colab compatibility
+        - Creates two output videos instead of real-time display:
+            1. Standard output video with tracking visualization
+            2. Combined video with info panel showing tracking details
+        - Uses matplotlib 'Agg' backend to avoid display dependencies
+        - All visualization is written directly to video files
+
+    The code tracks and records the same information as the local version:
+        - The id of the object
+        - The class of the object (the name of the object)
+        - The confidence of the detection
+        - The relative color of the object
+        - The relative size of the object
+        - The relative speed of the object
+
+    After the video processing is complete (which runs faster without display overhead), the code evaluates the model's
+    performance using evaluate.py. Results are saved in the output_files/<input filename>/evaluation_results folder.
+    In this folder, we will see the following evaluation graphs:
+        - ID Switches: Tracks how many times object IDs change incorrectly during tracking. Lower values indicate 
+        better tracking consistency. Shows cumulative switches over time.
+        
+        - IDF1 Curve: The ID F1 Score, which measures how well the tracker maintains consistent IDs. Combines ID 
+        precision and recall into a single score. Values range from 0 to 1, with 1 being perfect tracking.
+        
+        - IOU Curve: Shows the Intersection over Union scores across frames, measuring how well the predicted 
+        bounding boxes align with ground truth. Higher values (closer to 1) indicate better spatial accuracy.
+        
+        - MOTA Curve: Multiple Object Tracking Accuracy, a comprehensive metric that considers false positives, 
+        false negatives, and ID switches. Ranges from -∞ to 1, with 1 being perfect tracking.
+        
+        - Precision Recall Curve: Shows the trade-off between precision (accuracy of positive predictions) and 
+        recall (ability to find all positive instances). Helps in understanding detector performance at 
+        different confidence thresholds.
+        
+        - ROC Curve: Receiver Operating Characteristic curve plots true positive rate against false positive rate. 
+        Shows detector performance across different thresholds, with area under curve (AUC) indicating overall 
+        performance.
+        
+        - Traffic Count: Displays the cumulative count of unique objects detected over time. Useful for 
+        understanding traffic flow and detector consistency.
+
+    Additional features:
+    - Supports command line configuration of input/output files, visualization modes, and detection thresholds
+    - Automatic model management with downloading capabilities
+    - Multiple visualization modes: bounding boxes or segmentation overlays
+    - Advanced object analysis including color detection using K-means clustering
+    - Comprehensive error handling and logging
+    - Integration with SORT tracking algorithm
+    - Performance optimizations for CPU/GPU execution
+    - Dual video output with tracking visualization and information panel
+    - Temporary file management and cleanup
+"""
+
 import os
 import sys
 import logging
@@ -24,7 +95,7 @@ from collections import defaultdict
 import os
 import argparse
 
-# Import the Sort tracker
+# Import the Sort tracker from the repo we discussed using in our report
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))  # Add current directory to path
 from sort.sort import Sort  # Import the SORT tracker class
 from scipy.cluster.vq import kmeans, vq
@@ -36,7 +107,7 @@ import warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, 
                        module='threadpoolctl')
 
-# Add after the initial imports, before any matplotlib usage
+# Use non-GUI backend for matplotlib
 import matplotlib
 matplotlib.use('Agg')  # Use non-GUI backend
 
@@ -60,20 +131,21 @@ logging.basicConfig(
     datefmt="%H:%M:%S"
 )
 
-# Update model loading code
+# Update model loading section. This essentially either gets or downloads the model using Ultralytics YOLO's download method.
 def get_model_path(model_name):
     """Get path to model, download if doesn't exist"""
     # Get absolute path to models directory
     models_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
     os.makedirs(models_dir, exist_ok=True)
     
+    # Get the model path
     model_path = os.path.join(models_dir, model_name)
     if not os.path.exists(model_path):
         logging.info(f"Downloading {model_name} to models directory...")
         # Download model using YOLO's download method
         model = YOLO(model_name)
         
-        # Get the downloaded model path (usually in current directory)
+        # Get the downloaded model path (usually in current directory then moved to models directory)
         downloaded_path = os.path.join(os.getcwd(), model_name)
         
         # Move the model to our models directory
@@ -92,13 +164,13 @@ def get_model_path(model_name):
     return model_path
 
 # Update model loading section
-model_name = 'yolo11x.pt'  # Using v8 as it's more stable for local saving
+model_name = 'yolo11x.pt' # This is where we can interchange the model for square boxtypes.
 model = YOLO(get_model_path(model_name))
 logging.info(f"Loaded YOLO detection model: {model_name}")
 
 # If using overlay mode, ensure we get segmentation results
 if args.box_type == 'overlay':
-    seg_model_name = 'yolo11x-seg.pt'
+    seg_model_name = 'yolo11x-seg.pt' # This is where we can interchange the model for overlay boxtypes.
     seg_model = YOLO(get_model_path(seg_model_name))
     logging.info(f"Loaded YOLO-seg model for overlay mode: {seg_model_name}")
 
@@ -132,6 +204,8 @@ eval_output_dir = os.path.join(base_output_dir, 'evaluation_results')
 # Create output directories
 os.makedirs(video_output_dir, exist_ok=True)
 os.makedirs(eval_output_dir, exist_ok=True)
+
+# Notice the difference here between this code and the local version, the cv2 functionality is removed here.
 
 # Calculate display dimensions first
 display_width = int(width * 0.6)  # Main display takes 60% of original width
@@ -178,7 +252,7 @@ colors = np.random.rand(32, 3) * 255  # Random colors for visualization
 # Log video processing start
 logging.info(f"Starting processing video: {video_path}")
 
-# Helper function for IoU calculation - Move this to the top of the file, after imports
+# Helper function for IoU calculation
 def calculate_iou(box1, box2):
     # Extract coordinates
     x1_1, y1_1, x2_1, y2_1 = box1
@@ -429,7 +503,7 @@ def log_detections(frame_count, detections, classes=COCO_CLASSES):
     logging.info(f"[SORT] Frame {frame_count}: received {len(detections)} detections ({class_info})")
     return class_counts
 
-# Add near the top where we create other directories
+# Create a temporary directory for storing frames
 temp_frames_dir = os.path.join('temp_frames')
 os.makedirs(temp_frames_dir, exist_ok=True)
 
@@ -560,13 +634,12 @@ try:
                                                 # Create boolean mask
                                                 mask_bool = mask_data > 0.5
                                                 
-                                                # --- Mask smoothing (morphological closing + opening) ---
+                                                # Mask smoothing (morphological closing + opening)
                                                 kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
                                                 mask_uint = mask_bool.astype(np.uint8)
                                                 mask_uint = cv2.morphologyEx(mask_uint, cv2.MORPH_CLOSE, kernel)
                                                 mask_uint = cv2.morphologyEx(mask_uint, cv2.MORPH_OPEN, kernel)
                                                 mask_bool = mask_uint.astype(bool)
-                                                # -------------------------------------------------------
                                                 
                                                 # Get region of interest with mask
                                                 roi_mask = mask_bool[int(y1):int(y2), int(x1):int(x2)]
@@ -619,7 +692,7 @@ try:
                         color = colors[track_id % 32].tolist()
                         
                         if args.box_type == 'square':
-                                # Draw thicker bounding box
+                                # Draw bounding box
                                 cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 3)
                                 
                                 # Draw ID with larger font and better visibility
@@ -628,8 +701,7 @@ try:
                                 thickness = 3
                                 
                                 # Get text size for background
-                                (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 
-                                                                                     font_scale, thickness)
+                                (text_width, text_height), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)
                                 
                                 # Calculate text position to keep it in frame
                                 text_x = int(x1)
@@ -648,19 +720,11 @@ try:
                                     text_y = int(y1) + text_height + 30
                                 
                                 # Draw white background rectangle for black text
-                                cv2.rectangle(frame, 
-                                             (text_x, text_y - text_height - 5), 
-                                             (text_x + text_width + 10, text_y + 5), 
-                                             (255, 255, 255),  # White background
-                                             -1)  # Filled rectangle
+                                cv2.rectangle(frame, (text_x, text_y - text_height - 5), (text_x + text_width + 10, text_y + 5), (255, 255, 255), -1)  # Filled rectangle
                                 
                                 # Draw black text
-                                cv2.putText(frame, text, 
-                                            (text_x + 5, text_y),
-                                            cv2.FONT_HERSHEY_SIMPLEX,
-                                            font_scale,
-                                            (0, 0, 0),  # Black text
-                                            thickness)
+                                cv2.putText(frame, text, (text_x + 5, text_y), cv2.FONT_HERSHEY_SIMPLEX, font_scale, (0, 0, 0), thickness)
+                        # 'overlay' mode
                         else:  # 'overlay' mode
                             # Find the corresponding segmentation mask if available
                             if args.box_type == 'overlay':
@@ -708,7 +772,7 @@ try:
                                                     # Blend with original frame
                                                     cv2.addWeighted(overlay, 0.5, frame, 0.5, 0, frame)
                                                     
-                                                    # print(f"Applied mask for track {track_id}")
+                                                    # print(f"Applied mask for track {track_id}") # debug log
                                                 except Exception as e:
                                                     print(f"Error applying mask: {str(e)}")
                                                     cv2.rectangle(frame, (int(x1), int(y1)), 
@@ -733,17 +797,17 @@ try:
         cv2.putText(info_panel, f"Mode: {args.box_type}", (20, 70), 
                     cv2.FONT_HERSHEY_DUPLEX, 0.9, (255, 255, 255), 2)
         
-        # Add title with larger, bolder text
+        # Add title
         cv2.putText(info_panel, "Object Tracking Information", (20, 110), 
                     cv2.FONT_HERSHEY_DUPLEX, 1.2, (255, 255, 255), 3)
         
-        # Add column headers with larger text and more space
+        # Add column headers
         header = "ID | Class          | Conf | Color      | Size     | Movement"  # More spacing
         cv2.putText(info_panel, header, (20, 160), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (200, 200, 200), 2)
         cv2.line(info_panel, (20, 180), (info_panel_width-20, 180), (150, 150, 150), 2)
         
-        # Add tracking data with larger, bolder text
+        # Add tracking data
         y_pos = 230
         for track_id, track_info in sorted(active_tracks.items()):
             # Get the color for this track ID
@@ -751,15 +815,16 @@ try:
             
             # Format each field with more width
             id_str = f"{track_id:3d}"
-            class_str = f"{track_info['class_name'][:15]:15s}"  # Increased width
+            class_str = f"{track_info['class_name'][:15]:15s}"
             conf_str = f"{int(track_info['confidence'] * 100):3d}%"
-            color_str = f"{track_info['color_name'][:10]:10s}"  # Increased width
-            size_str = f"{track_info['size']:8s}"  # Increased width
-            move_str = f"{track_info['movement']:10s}"  # Fixed width for movement
+            color_str = f"{track_info['color_name'][:10]:10s}"
+            size_str = f"{track_info['size']:8s}"
+            move_str = f"{track_info['movement']:10s}"
             
             # Combine with proper spacing
             text = f"{id_str} | {class_str} | {conf_str} | {color_str} | {size_str} | {move_str}"
             
+            # Add text to info panel
             cv2.putText(info_panel, text, (20, y_pos), 
                         cv2.FONT_HERSHEY_SIMPLEX, 0.9, color, 2)
             y_pos += 50  # Increased spacing between rows
@@ -773,9 +838,9 @@ try:
         # Combine display frame and info panel horizontally
         combined_view = np.hstack((display_frame, info_panel))
         
-        # Instead of displaying, write to video files
-        out.write(frame)  # Write original size frame with boxes
-        out_panel.write(combined_view)  # Write combined view with info panel
+        # Instead of displaying, write to video files (no cv2 just save)
+        out.write(frame) # Write original size frame with boxes
+        out_panel.write(combined_view) # Write combined view with info panel
         
         # Store tracking results for evaluation
         if len(detections) > 0:
@@ -790,6 +855,7 @@ try:
                         matching_det = det
                         break
 
+                # Store tracking results for evaluation
                 tracking_results.append({
                     "frame": frame_count,
                     "id": int(track_id),
@@ -826,7 +892,7 @@ try:
                 frame_count,
                 video_name,
                 model.names,
-                output_dir=eval_output_dir  # Add this parameter
+                output_dir=eval_output_dir
             )
         except Exception as eval_error:
             if "np.asfarray" in str(eval_error):
@@ -862,7 +928,7 @@ except KeyboardInterrupt:
     out.release()
     out_panel.release()
     
-    # Remove incomplete temp files
+    # Cleanup temp frames
     if os.path.exists(temp_frames_dir):
         import shutil
         shutil.rmtree(temp_frames_dir)
