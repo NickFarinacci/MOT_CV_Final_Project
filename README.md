@@ -50,6 +50,7 @@
     git config http.postBuffer 524288000
     ```
     This example will increase the buffer size to 500MB, which was useful for uploading the YOLO11x.pt model, datasets, and other input/output files.
+    This proved to be a challenge only due to us having to use multiple repositores before we found the solution in ignoring the larger files or increasing the buffer size.
 
 # Evaluation
 The system automatically performs comprehensive evaluation after processing each video, including:
